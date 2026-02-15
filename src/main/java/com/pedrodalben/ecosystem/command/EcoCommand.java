@@ -14,13 +14,17 @@ import com.pedrodalben.ecosystem.currency.CurrencyType;
 import com.pedrodalben.ecosystem.ledger.LedgerService;
 import com.pedrodalben.ecosystem.ledger.Transaction;
 import com.pedrodalben.ecosystem.ledger.TransactionResult;
+import com.pedrodalben.ecosystem.shop.chest.ShopTerminalBlockEntity;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 import java.util.List;
@@ -115,19 +119,30 @@ public class EcoCommand {
                                         .then(Commands.argument("id", StringArgumentType.word())
                                                 .then(Commands
                                                         .argument("displayName", StringArgumentType.greedyString())
-                                                        .executes(ctx -> currencyCreate(ctx)))))))
+                                                        .executes(ctx -> currencyCreate(ctx))))))
 
-                // /eco audit last <n> [player] [currency]
-                .then(Commands.literal("audit")
-                        .requires(src -> src.hasPermission(2))
-                        .then(Commands.literal("last")
-                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 50))
-                                        .executes(ctx -> auditLast(ctx))
-                                        .then(Commands.argument("player", EntityArgument.player())
-                                                .executes(ctx -> auditLastPlayer(ctx))
-                                                .then(Commands.argument("currency", StringArgumentType.word())
-                                                        .suggests(CURRENCY_SUGGESTIONS)
-                                                        .executes(ctx -> auditLastPlayerCurrency(ctx))))))));
+                        // /eco shop ...
+                        .then(Commands.literal("shop")
+                                .then(Commands.literal("inspect")
+                                        .requires(src -> src.hasPermission(2))
+                                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
+                                                .executes(ctx -> shopInspect(ctx))))
+                                .then(Commands.literal("remove")
+                                        .requires(src -> src.hasPermission(2))
+                                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
+                                                .executes(ctx -> shopRemove(ctx)))))
+
+                        // /eco audit last <n> [player] [currency]
+                        .then(Commands.literal("audit")
+                                .requires(src -> src.hasPermission(2))
+                                .then(Commands.literal("last")
+                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 50))
+                                                .executes(ctx -> auditLast(ctx))
+                                                .then(Commands.argument("player", EntityArgument.player())
+                                                        .executes(ctx -> auditLastPlayer(ctx))
+                                                        .then(Commands.argument("currency", StringArgumentType.word())
+                                                                .suggests(CURRENCY_SUGGESTIONS)
+                                                                .executes(ctx -> auditLastPlayerCurrency(ctx)))))))));
     }
 
     // ==================== BALANCE COMMANDS ====================
@@ -451,6 +466,67 @@ public class EcoCommand {
                     from, to, tx.amount(), tx.taxAmount())).append("\n");
         }
         ctx.getSource().sendSuccess(() -> msg, false);
+    }
+
+    // ==================== SHOP ADMIN COMMANDS ====================
+
+    private static int shopInspect(CommandContext<CommandSourceStack> ctx) {
+        BlockPos pos = BlockPosArgument.getBlockPos(ctx, "pos");
+        BlockEntity be = ctx.getSource().getLevel().getBlockEntity(pos);
+
+        if (!(be instanceof ShopTerminalBlockEntity terminal)) {
+            ctx.getSource().sendFailure(Component.translatable(LangKeys.INSPECT_NO_SHOP));
+            return 0;
+        }
+
+        MutableComponent msg = Component.translatable(LangKeys.INSPECT_HEADER).append("\n");
+        msg.append(Component.translatable(LangKeys.INSPECT_OWNER, terminal.getOwnerName())).append("\n");
+        msg.append(Component.translatable(LangKeys.INSPECT_TYPE,
+                terminal.isAdminShop() ? "Admin" : "Player")).append("\n");
+        msg.append(Component.translatable(LangKeys.INSPECT_CURRENCY, terminal.getCurrencyId())).append("\n");
+
+        if (terminal.getLinkedChestPos() != null) {
+            msg.append(Component.translatable(LangKeys.INSPECT_CHEST,
+                    terminal.getLinkedChestPos().toShortString())).append("\n");
+        }
+
+        for (int i = 0; i < terminal.getListings().size(); i++) {
+            ShopTerminalBlockEntity.ShopListing l = terminal.getListings().get(i);
+            String buy = l.canBuy() ? String.valueOf(l.buyPrice()) : "—";
+            String sell = l.canSell() ? String.valueOf(l.sellPrice()) : "—";
+            msg.append(Component.translatable(LangKeys.INSPECT_LISTING,
+                    String.valueOf(i), l.displayName(), buy, sell)).append("\n");
+
+            if (!terminal.isAdminShop()) {
+                int stock = terminal.countStock(l.itemId());
+                msg.append(Component.translatable(LangKeys.INSPECT_STOCK, String.valueOf(stock))).append("\n");
+            }
+        }
+
+        ctx.getSource().sendSuccess(() -> msg, false);
+        return 1;
+    }
+
+    private static int shopRemove(CommandContext<CommandSourceStack> ctx) {
+        BlockPos pos = BlockPosArgument.getBlockPos(ctx, "pos");
+        BlockEntity be = ctx.getSource().getLevel().getBlockEntity(pos);
+
+        if (!(be instanceof ShopTerminalBlockEntity terminal)) {
+            ctx.getSource().sendFailure(Component.translatable(LangKeys.INSPECT_NO_SHOP));
+            return 0;
+        }
+
+        // Clear all shop data
+        terminal.clearListings();
+        terminal.setOwnerName("");
+        terminal.setOwnerUuid(null);
+        terminal.setAdminShop(false);
+        terminal.setLinkedChestPos(null);
+        terminal.setChanged();
+
+        ctx.getSource().sendSuccess(
+                () -> Component.translatable(LangKeys.SHOP_REMOVED, pos.toShortString()), true);
+        return 1;
     }
 
     // ==================== HELPERS ====================

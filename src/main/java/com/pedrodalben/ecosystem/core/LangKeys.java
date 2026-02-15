@@ -37,6 +37,8 @@ public class LangKeys {
     public static final String ERROR_CURRENCY_NOT_FOUND = "error.ecosystem.currency_not_found";
     public static final String ERROR_SHOP_NO_BUY = "error.ecosystem.shop_no_buy";
     public static final String ERROR_INSUFFICIENT_ITEMS = "error.ecosystem.insufficient_items";
+    public static final String ERROR_CHEST_FULL = "error.ecosystem.chest_full";
+    public static final String ERROR_OWNER_INSUFFICIENT_FUNDS = "error.ecosystem.owner_insufficient_funds";
 
     // Shop
     public static final String SHOP_TITLE = "shop.ecosystem.title";
@@ -67,6 +69,29 @@ public class LangKeys {
     public static final String SHOP_RELOAD_SUCCESS = "shop.ecosystem.reload.success";
     public static final String SHOP_RELOAD_WARNINGS = "shop.ecosystem.reload.warnings";
     public static final String SHOP_QUANTITY = "shop.ecosystem.quantity";
+
+    // Sign-based shop creation
+    public static final String SIGN_SHOP_CREATED = "shop.ecosystem.sign.created";
+    public static final String SIGN_ERROR_NOT_YOUR_NAME = "shop.ecosystem.sign.not_your_name";
+    public static final String SIGN_ERROR_NO_TERMINAL = "shop.ecosystem.sign.no_terminal";
+    public static final String SIGN_ERROR_OWN_SHOP = "shop.ecosystem.sign.own_shop";
+    public static final String SIGN_ERROR_INVALID_FORMAT = "error.ecosystem.sign.invalid_format";
+    public static final String SIGN_ERROR_MISSING_OWNER = "error.ecosystem.sign.missing_owner";
+    public static final String SIGN_ERROR_INVALID_QUANTITY = "error.ecosystem.sign.invalid_quantity";
+    public static final String SIGN_ERROR_INVALID_PRICE = "error.ecosystem.sign.invalid_price";
+    public static final String SIGN_ERROR_MISSING_ITEM = "error.ecosystem.sign.missing_item";
+    public static final String SIGN_ERROR_INVALID_ITEM = "error.ecosystem.sign.invalid_item";
+
+    // Admin shop inspect/remove
+    public static final String INSPECT_HEADER = "command.ecosystem.shop.inspect.header";
+    public static final String INSPECT_OWNER = "command.ecosystem.shop.inspect.owner";
+    public static final String INSPECT_TYPE = "command.ecosystem.shop.inspect.type";
+    public static final String INSPECT_CURRENCY = "command.ecosystem.shop.inspect.currency";
+    public static final String INSPECT_LISTING = "command.ecosystem.shop.inspect.listing";
+    public static final String INSPECT_STOCK = "command.ecosystem.shop.inspect.stock";
+    public static final String INSPECT_CHEST = "command.ecosystem.shop.inspect.chest";
+    public static final String INSPECT_NO_SHOP = "command.ecosystem.shop.inspect.no_shop";
+    public static final String SHOP_REMOVED = "command.ecosystem.shop.removed";
 
     // GUI
     public static final String GUI_TERMINAL_TITLE = "gui.ecosystem.terminal.title";

@@ -3,80 +3,118 @@ package com.pedrodalben.ecosystem.core;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 public class EcoSystemConfig {
-    private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+        private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
-    // Storage
-    public static final ModConfigSpec.EnumValue<StorageType> STORAGE_BACKEND;
-    public static final ModConfigSpec.IntValue FLUSH_INTERVAL_SECONDS;
-    public static final ModConfigSpec.IntValue MAX_PENDING_WRITES;
+        // Storage
+        public static final ModConfigSpec.EnumValue<StorageType> STORAGE_BACKEND;
+        public static final ModConfigSpec.IntValue FLUSH_INTERVAL_SECONDS;
+        public static final ModConfigSpec.IntValue MAX_PENDING_WRITES;
 
-    // Features
-    public static final ModConfigSpec.BooleanValue ENABLE_GUI_SHOP;
-    public static final ModConfigSpec.BooleanValue ENABLE_CHEST_SHOP;
+        // Features
+        public static final ModConfigSpec.BooleanValue ENABLE_GUI_SHOP;
+        public static final ModConfigSpec.BooleanValue ENABLE_CHEST_SHOP;
+        public static final ModConfigSpec.ConfigValue<String> ADMIN_SHOP_NAME;
 
-    // JDBC
-    public static final ModConfigSpec.ConfigValue<String> JDBC_URL;
-    public static final ModConfigSpec.ConfigValue<String> JDBC_USERNAME;
-    public static final ModConfigSpec.ConfigValue<String> JDBC_PASSWORD;
-    public static final ModConfigSpec.IntValue JDBC_POOL_SIZE;
+        // Permissions (op-levels 0-4)
+        public static final ModConfigSpec.IntValue PERM_SHOP_CREATE;
+        public static final ModConfigSpec.IntValue PERM_SHOP_CREATE_ADMIN;
+        public static final ModConfigSpec.IntValue PERM_SHOP_BUY;
+        public static final ModConfigSpec.IntValue PERM_SHOP_SELL;
+        public static final ModConfigSpec.IntValue PERM_SHOP_DESTROY;
+        public static final ModConfigSpec.IntValue PERM_SHOP_DESTROY_OTHER;
+        public static final ModConfigSpec.IntValue PERM_SHOP_INSPECT;
 
-    // Audit
-    public static final ModConfigSpec.BooleanValue AUDIT_ENABLED;
-    public static final ModConfigSpec.IntValue AUDIT_MAX_FILE_SIZE_MB;
+        // JDBC
+        public static final ModConfigSpec.ConfigValue<String> JDBC_URL;
+        public static final ModConfigSpec.ConfigValue<String> JDBC_USERNAME;
+        public static final ModConfigSpec.ConfigValue<String> JDBC_PASSWORD;
+        public static final ModConfigSpec.IntValue JDBC_POOL_SIZE;
 
-    public static final ModConfigSpec SPEC;
+        // Audit
+        public static final ModConfigSpec.BooleanValue AUDIT_ENABLED;
+        public static final ModConfigSpec.IntValue AUDIT_MAX_FILE_SIZE_MB;
 
-    static {
-        BUILDER.push("storage");
-        STORAGE_BACKEND = BUILDER
-                .comment("Storage backend to use: SAVEDDATA (default, file-based) or JDBC (database)")
-                .defineEnum("backend", StorageType.SAVEDDATA);
-        FLUSH_INTERVAL_SECONDS = BUILDER
-                .comment("How often (in seconds) to flush cached data to disk/DB")
-                .defineInRange("flushIntervalSeconds", 30, 5, 300);
-        MAX_PENDING_WRITES = BUILDER
-                .comment("Maximum pending write operations before forcing a flush")
-                .defineInRange("maxPendingWrites", 100, 10, 10000);
-        BUILDER.pop();
+        public static final ModConfigSpec SPEC;
 
-        BUILDER.push("features");
-        ENABLE_GUI_SHOP = BUILDER
-                .comment("Enable the GUI-based shop system")
-                .define("enableGuiShop", true);
-        ENABLE_CHEST_SHOP = BUILDER
-                .comment("Enable the chest-based shop system")
-                .define("enableChestShop", true);
-        BUILDER.pop();
+        static {
+                BUILDER.push("storage");
+                STORAGE_BACKEND = BUILDER
+                                .comment("Storage backend to use: SAVEDDATA (default, file-based) or JDBC (database)")
+                                .defineEnum("backend", StorageType.SAVEDDATA);
+                FLUSH_INTERVAL_SECONDS = BUILDER
+                                .comment("How often (in seconds) to flush cached data to disk/DB")
+                                .defineInRange("flushIntervalSeconds", 30, 5, 300);
+                MAX_PENDING_WRITES = BUILDER
+                                .comment("Maximum pending write operations before forcing a flush")
+                                .defineInRange("maxPendingWrites", 100, 10, 10000);
+                BUILDER.pop();
 
-        BUILDER.push("jdbc");
-        JDBC_URL = BUILDER
-                .comment("JDBC connection URL (e.g., jdbc:mysql://localhost:3306/economy)")
-                .define("url", "jdbc:sqlite:economy.db");
-        JDBC_USERNAME = BUILDER
-                .comment("Database username")
-                .define("username", "root");
-        JDBC_PASSWORD = BUILDER
-                .comment("Database password")
-                .define("password", "");
-        JDBC_POOL_SIZE = BUILDER
-                .comment("Connection pool size (HikariCP)")
-                .defineInRange("poolSize", 5, 1, 20);
-        BUILDER.pop();
+                BUILDER.push("features");
+                ENABLE_GUI_SHOP = BUILDER
+                                .comment("Enable the GUI-based shop system")
+                                .define("enableGuiShop", true);
+                ENABLE_CHEST_SHOP = BUILDER
+                                .comment("Enable the chest-based shop system")
+                                .define("enableChestShop", true);
+                ADMIN_SHOP_NAME = BUILDER
+                                .comment("The name that identifies admin shops (case-insensitive, spaces ignored)")
+                                .define("adminShopName", "Admin Shop");
+                BUILDER.pop();
 
-        BUILDER.push("audit");
-        AUDIT_ENABLED = BUILDER
-                .comment("Enable transaction audit logging")
-                .define("enabled", true);
-        AUDIT_MAX_FILE_SIZE_MB = BUILDER
-                .comment("Maximum audit log file size in MB before rotation")
-                .defineInRange("maxFileSizeMB", 10, 1, 100);
-        BUILDER.pop();
+                BUILDER.push("permissions");
+                BUILDER.comment("Op-level required for each shop permission (0 = all players, 1-4 = operator levels)");
+                PERM_SHOP_CREATE = BUILDER
+                                .comment("Create player shops")
+                                .defineInRange("shopCreate", 0, 0, 4);
+                PERM_SHOP_CREATE_ADMIN = BUILDER
+                                .comment("Create admin shops (unlimited stock)")
+                                .defineInRange("shopCreateAdmin", 2, 0, 4);
+                PERM_SHOP_BUY = BUILDER
+                                .comment("Buy from shops")
+                                .defineInRange("shopBuy", 0, 0, 4);
+                PERM_SHOP_SELL = BUILDER
+                                .comment("Sell to shops")
+                                .defineInRange("shopSell", 0, 0, 4);
+                PERM_SHOP_DESTROY = BUILDER
+                                .comment("Destroy own shops")
+                                .defineInRange("shopDestroy", 0, 0, 4);
+                PERM_SHOP_DESTROY_OTHER = BUILDER
+                                .comment("Destroy other players' shops")
+                                .defineInRange("shopDestroyOther", 2, 0, 4);
+                PERM_SHOP_INSPECT = BUILDER
+                                .comment("Inspect any shop's details")
+                                .defineInRange("shopInspect", 2, 0, 4);
+                BUILDER.pop();
 
-        SPEC = BUILDER.build();
-    }
+                BUILDER.push("jdbc");
+                JDBC_URL = BUILDER
+                                .comment("JDBC connection URL (e.g., jdbc:mysql://localhost:3306/economy)")
+                                .define("url", "jdbc:sqlite:economy.db");
+                JDBC_USERNAME = BUILDER
+                                .comment("Database username")
+                                .define("username", "root");
+                JDBC_PASSWORD = BUILDER
+                                .comment("Database password")
+                                .define("password", "");
+                JDBC_POOL_SIZE = BUILDER
+                                .comment("Connection pool size (HikariCP)")
+                                .defineInRange("poolSize", 5, 1, 20);
+                BUILDER.pop();
 
-    public enum StorageType {
-        SAVEDDATA,
-        JDBC
-    }
+                BUILDER.push("audit");
+                AUDIT_ENABLED = BUILDER
+                                .comment("Enable transaction audit logging")
+                                .define("enabled", true);
+                AUDIT_MAX_FILE_SIZE_MB = BUILDER
+                                .comment("Maximum audit log file size in MB before rotation")
+                                .defineInRange("maxFileSizeMB", 10, 1, 100);
+                BUILDER.pop();
+
+                SPEC = BUILDER.build();
+        }
+
+        public enum StorageType {
+                SAVEDDATA,
+                JDBC
+        }
 }

@@ -19,6 +19,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Block entity for the Shop Terminal.
@@ -30,9 +31,15 @@ public class ShopTerminalBlockEntity extends BlockEntity {
     private UUID ownerUuid;
     private String ownerName = "";
     private String currencyId = "money";
+    private boolean adminShop = false;
     private final List<ShopListing> listings = new ArrayList<>();
     @Nullable
     private BlockPos linkedChestPos;
+
+    /**
+     * Per-terminal lock to prevent race conditions during concurrent transactions
+     */
+    private final transient ReentrantLock transactionLock = new ReentrantLock();
 
     public record ShopListing(String itemId, String displayName, long buyPrice, long sellPrice,
             boolean canBuy, boolean canSell) {
@@ -52,6 +59,7 @@ public class ShopTerminalBlockEntity extends BlockEntity {
             tag.putUUID("owner", ownerUuid);
         tag.putString("ownerName", ownerName);
         tag.putString("currency", currencyId);
+        tag.putBoolean("adminShop", adminShop);
 
         if (linkedChestPos != null) {
             tag.putInt("chestX", linkedChestPos.getX());
@@ -81,6 +89,7 @@ public class ShopTerminalBlockEntity extends BlockEntity {
             ownerUuid = tag.getUUID("owner");
         ownerName = tag.getString("ownerName");
         currencyId = tag.getString("currency");
+        adminShop = tag.getBoolean("adminShop");
 
         if (tag.contains("chestX")) {
             linkedChestPos = new BlockPos(tag.getInt("chestX"), tag.getInt("chestY"), tag.getInt("chestZ"));
@@ -161,7 +170,22 @@ public class ShopTerminalBlockEntity extends BlockEntity {
     }
 
     public boolean isConfigured() {
-        return !listings.isEmpty() && linkedChestPos != null;
+        // Admin shops don't require a linked chest
+        return !listings.isEmpty() && (adminShop || linkedChestPos != null);
+    }
+
+    public boolean isAdminShop() {
+        return adminShop;
+    }
+
+    public void setAdminShop(boolean adminShop) {
+        this.adminShop = adminShop;
+        setChanged();
+    }
+
+    /** Acquire the per-terminal transaction lock (for thread-safe buy/sell). */
+    public ReentrantLock getTransactionLock() {
+        return transactionLock;
     }
 
     public UUID getOwnerUuid() {

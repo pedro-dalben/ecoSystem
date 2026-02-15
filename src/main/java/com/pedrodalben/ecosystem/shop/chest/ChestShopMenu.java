@@ -7,6 +7,9 @@ import com.pedrodalben.ecosystem.ledger.LedgerService;
 import com.pedrodalben.ecosystem.ledger.TransactionResult;
 import com.pedrodalben.ecosystem.currency.Currency;
 import com.pedrodalben.ecosystem.net.ModPayloads;
+import com.pedrodalben.ecosystem.tax.TaxResult;
+import com.pedrodalben.ecosystem.tax.TaxService;
+import com.pedrodalben.ecosystem.ledger.TransactionType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
@@ -24,10 +27,15 @@ import net.minecraft.world.item.ItemStack;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Chest shop menu — displays shop terminal's listings for buying/selling.
- * Includes the player's inventory for convenience.
+ * Supports both player shops (chest-backed, stock limited) and
+ * admin shops (unlimited stock, no chest required).
+ *
+ * All transactions are protected by a per-terminal ReentrantLock to
+ * prevent race conditions from concurrent access.
  */
 public class ChestShopMenu extends AbstractContainerMenu {
 
@@ -35,6 +43,7 @@ public class ChestShopMenu extends AbstractContainerMenu {
     private List<ShopTerminalBlockEntity.ShopListing> listings = List.of();
     private String ownerName = "";
     private String currencyId = "money";
+    private boolean adminShop = false;
 
     // Server constructor
     public ChestShopMenu(int containerId, Inventory playerInventory, BlockPos pos,
@@ -44,6 +53,7 @@ public class ChestShopMenu extends AbstractContainerMenu {
         this.listings = terminalBE.getListings();
         this.ownerName = terminalBE.getOwnerName();
         this.currencyId = terminalBE.getCurrencyId();
+        this.adminShop = terminalBE.isAdminShop();
 
         // Player inventory
         for (int row = 0; row < 3; row++) {
@@ -59,19 +69,19 @@ public class ChestShopMenu extends AbstractContainerMenu {
     // Client constructor
     public static ChestShopMenu clientConstructor(int containerId, Inventory playerInventory, FriendlyByteBuf buf) {
         BlockPos pos = buf.readBlockPos();
-        // We receive minimal data; listings come via separate sync or are embedded
         return new ChestShopMenu(containerId, playerInventory, pos, createDummyBE(pos, buf));
     }
 
     private static ShopTerminalBlockEntity createDummyBE(BlockPos pos, FriendlyByteBuf buf) {
-        // Read shop data from buffer for client display
         ShopTerminalBlockEntity dummy = new ShopTerminalBlockEntity(pos,
                 EcoSystemMod.SHOP_TERMINAL_BLOCK.get().defaultBlockState());
         String owner = buf.readUtf();
         String currency = buf.readUtf();
+        boolean isAdmin = buf.readBoolean();
         int listingCount = buf.readVarInt();
         dummy.setOwnerName(owner);
         dummy.setCurrencyId(currency);
+        dummy.setAdminShop(isAdmin);
         for (int i = 0; i < listingCount; i++) {
             dummy.addListing(new ShopTerminalBlockEntity.ShopListing(
                     buf.readUtf(), buf.readUtf(),
@@ -81,8 +91,15 @@ public class ChestShopMenu extends AbstractContainerMenu {
         return dummy;
     }
 
+    // ==================== BUY ====================
+
     /**
      * Server-side buy operation for a listed item.
+     *
+     * <p>
+     * Player shop: deducts from chest stock, credits owner (after tax).
+     * <p>
+     * Admin shop: unlimited stock, tax goes to SINK, no owner credit.
      */
     public TransactionResult buyItem(ServerPlayer player, int listingIndex, int quantity) {
         if (listingIndex < 0 || listingIndex >= listings.size()) {
@@ -93,11 +110,47 @@ public class ChestShopMenu extends AbstractContainerMenu {
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_NOT_FOR_SALE));
         }
 
-        // Check stock in linked chest
+        // Permission check
+        if (!ShopPermission.SHOP_BUY.hasPermission(player)) {
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_NO_PERMISSION));
+        }
+
         ShopTerminalBlockEntity be = getTerminalBE(player);
         if (be == null)
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_SHOP_NOT_FOUND));
 
+        // Acquire per-terminal lock
+        ReentrantLock lock = be.getTransactionLock();
+        lock.lock();
+        try {
+            return executeBuy(player, be, listing, quantity);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private TransactionResult executeBuy(ServerPlayer player, ShopTerminalBlockEntity be,
+            ShopTerminalBlockEntity.ShopListing listing, int quantity) {
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(listing.itemId()));
+        ItemStack itemStack = new ItemStack(item, quantity);
+
+        // Check player has inventory space
+        if (countFreeSpace(player, item) < quantity) {
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_INSUFFICIENT_SPACE));
+        }
+
+        if (adminShop) {
+            // Admin shop — unlimited stock, no chest
+            return executeAdminBuy(player, be, listing, item, itemStack, quantity);
+        } else {
+            // Player shop — deduct from chest
+            return executePlayerBuy(player, be, listing, item, itemStack, quantity);
+        }
+    }
+
+    private TransactionResult executePlayerBuy(ServerPlayer player, ShopTerminalBlockEntity be,
+            ShopTerminalBlockEntity.ShopListing listing,
+            Item item, ItemStack itemStack, int quantity) {
         Container chest = be.getLinkedChest();
         if (chest == null)
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_NO_LINKED_CHEST));
@@ -107,7 +160,6 @@ public class ChestShopMenu extends AbstractContainerMenu {
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_OUT_OF_STOCK, stock));
         }
 
-        // Process payment
         Currency currency = ServerEvents.getCurrencyRegistry().getCurrency(currencyId);
         if (currency == null)
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_CURRENCY_NOT_FOUND));
@@ -115,29 +167,61 @@ public class ChestShopMenu extends AbstractContainerMenu {
         LedgerService ledger = ServerEvents.getLedgerService();
         long totalPrice = listing.buyPrice() * quantity;
 
-        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(listing.itemId()));
-        ItemStack itemStack = new ItemStack(item, quantity);
+        // Calculate tax
+        TaxService taxService = ServerEvents.getTaxService();
+        TaxResult taxResult = taxService.calculateTax(currency, TransactionType.SHOP_BUY, totalPrice);
 
         TransactionResult result = ledger.shopBuy(player.getUUID(), currency, itemStack, totalPrice,
                 "chest_shop:" + listing.itemId() + "@" + terminalPos.toShortString());
 
         if (result.success()) {
-            // Remove from chest
             removeFromChest(chest, listing.itemId(), quantity);
-            // Give to player
             if (!player.getInventory().add(itemStack.copy())) {
                 player.drop(itemStack.copy(), false);
             }
-            // Credit shop owner
-            ledger.adminGive(be.getOwnerUuid(), currency, totalPrice);
+            // Credit owner with net amount (after tax)
+            long ownerProceeds = taxResult.netAmount();
+            ledger.adminGive(be.getOwnerUuid(), currency, ownerProceeds);
             ModPayloads.sendBalanceSync(player);
         }
 
         return result;
     }
 
+    private TransactionResult executeAdminBuy(ServerPlayer player, ShopTerminalBlockEntity be,
+            ShopTerminalBlockEntity.ShopListing listing,
+            Item item, ItemStack itemStack, int quantity) {
+        Currency currency = ServerEvents.getCurrencyRegistry().getCurrency(currencyId);
+        if (currency == null)
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_CURRENCY_NOT_FOUND));
+
+        LedgerService ledger = ServerEvents.getLedgerService();
+        long totalPrice = listing.buyPrice() * quantity;
+
+        TransactionResult result = ledger.shopBuy(player.getUUID(), currency, itemStack, totalPrice,
+                "admin_shop:" + listing.itemId());
+
+        if (result.success()) {
+            // Admin shop: just give the items, no chest interaction
+            if (!player.getInventory().add(itemStack.copy())) {
+                player.drop(itemStack.copy(), false);
+            }
+            // Tax goes to SINK — no owner credit needed for admin shops
+            ModPayloads.sendBalanceSync(player);
+        }
+
+        return result;
+    }
+
+    // ==================== SELL ====================
+
     /**
      * Server-side sell operation.
+     *
+     * <p>
+     * Player shop: adds items to chest (if space), owner pays the seller.
+     * <p>
+     * Admin shop: unlimited buying, payment from server/sink.
      */
     public TransactionResult sellItem(ServerPlayer player, int listingIndex, int quantity) {
         if (listingIndex < 0 || listingIndex >= listings.size()) {
@@ -148,10 +232,50 @@ public class ChestShopMenu extends AbstractContainerMenu {
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_SHOP_NO_BUY));
         }
 
+        // Permission check
+        if (!ShopPermission.SHOP_SELL.hasPermission(player)) {
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_NO_PERMISSION));
+        }
+
+        ShopTerminalBlockEntity be = getTerminalBE(player);
+        if (be == null)
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_SHOP_NOT_FOUND));
+
+        // Acquire per-terminal lock
+        ReentrantLock lock = be.getTransactionLock();
+        lock.lock();
+        try {
+            return executeSell(player, be, listing, quantity);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private TransactionResult executeSell(ServerPlayer player, ShopTerminalBlockEntity be,
+            ShopTerminalBlockEntity.ShopListing listing, int quantity) {
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(listing.itemId()));
         int playerCount = countPlayerItems(player, item);
         if (playerCount < quantity) {
             return TransactionResult.failure(Component.translatable(LangKeys.ERROR_INSUFFICIENT_ITEMS, playerCount));
+        }
+
+        if (adminShop) {
+            return executeAdminSell(player, be, listing, item, quantity);
+        } else {
+            return executePlayerSell(player, be, listing, item, quantity);
+        }
+    }
+
+    private TransactionResult executePlayerSell(ServerPlayer player, ShopTerminalBlockEntity be,
+            ShopTerminalBlockEntity.ShopListing listing,
+            Item item, int quantity) {
+        Container chest = be.getLinkedChest();
+        if (chest == null)
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_NO_LINKED_CHEST));
+
+        // Check chest has space before accepting
+        if (countChestFreeSpace(chest, item) < quantity) {
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_CHEST_FULL));
         }
 
         Currency currency = ServerEvents.getCurrencyRegistry().getCurrency(currencyId);
@@ -161,21 +285,22 @@ public class ChestShopMenu extends AbstractContainerMenu {
         LedgerService ledger = ServerEvents.getLedgerService();
         long totalPrice = listing.sellPrice() * quantity;
 
-        // Remove items from player
+        // Check that the shop owner has enough balance to pay
+        long ownerBalance = ledger.getBalance(be.getOwnerUuid(), currencyId);
+        if (ownerBalance < totalPrice) {
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_OWNER_INSUFFICIENT_FUNDS));
+        }
+
+        // Remove items from player first
         removeFromPlayer(player, item, quantity);
 
         TransactionResult result = ledger.shopSell(player.getUUID(), currency, totalPrice,
                 "chest_shop:" + listing.itemId() + "@" + terminalPos.toShortString());
 
         if (result.success()) {
-            // Add items to chest
-            ShopTerminalBlockEntity be = getTerminalBE(player);
-            if (be != null) {
-                Container chest = be.getLinkedChest();
-                if (chest != null) {
-                    addToChest(chest, item, quantity);
-                }
-            }
+            addToChest(chest, item, quantity);
+            // Deduct from owner balance
+            ledger.adminTake(be.getOwnerUuid(), currency, totalPrice);
             ModPayloads.sendBalanceSync(player);
         } else {
             // Rollback: give items back
@@ -184,6 +309,35 @@ public class ChestShopMenu extends AbstractContainerMenu {
 
         return result;
     }
+
+    private TransactionResult executeAdminSell(ServerPlayer player, ShopTerminalBlockEntity be,
+            ShopTerminalBlockEntity.ShopListing listing,
+            Item item, int quantity) {
+        Currency currency = ServerEvents.getCurrencyRegistry().getCurrency(currencyId);
+        if (currency == null)
+            return TransactionResult.failure(Component.translatable(LangKeys.ERROR_CURRENCY_NOT_FOUND));
+
+        LedgerService ledger = ServerEvents.getLedgerService();
+        long totalPrice = listing.sellPrice() * quantity;
+
+        // Remove from player
+        removeFromPlayer(player, item, quantity);
+
+        TransactionResult result = ledger.shopSell(player.getUUID(), currency, totalPrice,
+                "admin_shop:" + listing.itemId());
+
+        if (result.success()) {
+            // Admin shop: items are consumed (destroyed), money comes from void
+            ModPayloads.sendBalanceSync(player);
+        } else {
+            // Rollback
+            player.getInventory().add(new ItemStack(item, quantity));
+        }
+
+        return result;
+    }
+
+    // ==================== MENU OVERRIDES ====================
 
     @Override
     public ItemStack quickMoveStack(Player player, int slotIndex) {
@@ -242,6 +396,22 @@ public class ChestShopMenu extends AbstractContainerMenu {
         }
     }
 
+    /**
+     * Count how much free space is available in the chest for a given item.
+     */
+    private int countChestFreeSpace(Container chest, Item item) {
+        int space = 0;
+        for (int i = 0; i < chest.getContainerSize(); i++) {
+            ItemStack stack = chest.getItem(i);
+            if (stack.isEmpty()) {
+                space += item.getDefaultMaxStackSize();
+            } else if (stack.is(item) && stack.getCount() < stack.getMaxStackSize()) {
+                space += stack.getMaxStackSize() - stack.getCount();
+            }
+        }
+        return space;
+    }
+
     private int countPlayerItems(Player player, Item item) {
         int count = 0;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
@@ -250,6 +420,19 @@ public class ChestShopMenu extends AbstractContainerMenu {
                 count += stack.getCount();
         }
         return count;
+    }
+
+    private int countFreeSpace(Player player, Item item) {
+        int space = 0;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.isEmpty()) {
+                space += item.getDefaultMaxStackSize();
+            } else if (stack.is(item) && stack.getCount() < stack.getMaxStackSize()) {
+                space += stack.getMaxStackSize() - stack.getCount();
+            }
+        }
+        return space;
     }
 
     private void removeFromPlayer(Player player, Item item, int amount) {
@@ -266,6 +449,8 @@ public class ChestShopMenu extends AbstractContainerMenu {
         }
     }
 
+    // ==================== ACCESSORS ====================
+
     public List<ShopTerminalBlockEntity.ShopListing> getListings() {
         return listings;
     }
@@ -278,6 +463,10 @@ public class ChestShopMenu extends AbstractContainerMenu {
         return currencyId;
     }
 
+    public boolean isAdminShop() {
+        return adminShop;
+    }
+
     public BlockPos getTerminalPos() {
         return terminalPos;
     }
@@ -286,6 +475,9 @@ public class ChestShopMenu extends AbstractContainerMenu {
         return new MenuProvider() {
             @Override
             public Component getDisplayName() {
+                if (terminalBE.isAdminShop()) {
+                    return Component.translatable(LangKeys.SHOP_ADMIN_MODE);
+                }
                 return Component.translatable(LangKeys.SHOP_HEADER, terminalBE.getOwnerName());
             }
 
