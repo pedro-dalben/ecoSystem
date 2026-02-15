@@ -1,0 +1,88 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.140'
+}
+
+version = mod_version
+group = mod_group_id
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = neo_version
+
+    parchment {
+        mappingsVersion = parchment_version
+        minecraftVersion = parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+        server {
+            server()
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+        data {
+            data()
+            programArguments.addAll '--mod', mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet project.sourceSets.main
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+dependencies {
+    // HikariCP for JDBC connection pooling (optional backend)
+    implementation 'com.zaxxer:HikariCP:5.1.0'
+
+    // Jdbi for SQL access (optional backend)
+    implementation 'org.jdbi:jdbi3-core:3.45.4'
+
+    // Gson is already provided by Minecraft, no need to add
+}
+
+// Include dependencies in the mod JAR
+jar {
+    manifest {
+        attributes([
+            "Specification-Title"     : mod_id,
+            "Specification-Vendor"    : mod_authors,
+            "Specification-Version"   : "1",
+            "Implementation-Title"    : mod_name,
+            "Implementation-Version"  : mod_version,
+            "Implementation-Vendor"   : mod_authors,
+            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
