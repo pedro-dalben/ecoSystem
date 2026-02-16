@@ -10,23 +10,22 @@ version="${mod_version}"
 displayName="${mod_name}"
 authors="${mod_authors}"
 description='''${mod_description}'''
+# Server-side only: clients do not need this mod to connect
+displayTest="IGNORE_SERVER_VERSION"
 
 [[accessTransformers]]
 file="META-INF/accesstransformer.cfg"
-
-[[mixins]]
-config="${mod_id}.mixins.json"
 
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"
     versionRange="[21.1,)"
     ordering="NONE"
-    side="BOTH"
+    side="SERVER"
 
 [[dependencies.${mod_id}]]
     modId="minecraft"
     type="required"
     versionRange="[1.21.1,1.22)"
     ordering="NONE"
-    side="BOTH"
+    side="SERVER"

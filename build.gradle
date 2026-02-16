@@ -49,6 +49,26 @@ neoForge {
     }
 }
 
+
+// Expand Gradle properties into resource files (neoforge.mods.toml etc.)
+processResources {
+    def replaceProperties = [
+        mod_id             : mod_id,
+        mod_name           : mod_name,
+        mod_version        : mod_version,
+        mod_authors        : mod_authors,
+        mod_description    : mod_description,
+        mod_license        : mod_license,
+        neo_version        : neo_version,
+        minecraft_version  : minecraft_version,
+    ]
+    inputs.properties(replaceProperties)
+
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand(replaceProperties)
+    }
+}
+
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 dependencies {

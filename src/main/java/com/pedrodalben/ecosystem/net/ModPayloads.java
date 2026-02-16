@@ -25,7 +25,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 public class ModPayloads {
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(EcoSystemMod.MOD_ID).versioned("1");
+        PayloadRegistrar registrar = event.registrar(EcoSystemMod.MOD_ID).optional();
 
         // Server → Client
         registrar.playToClient(
@@ -152,6 +152,10 @@ public class ModPayloads {
      * Send balance sync to a specific player.
      */
     public static void sendBalanceSync(ServerPlayer player) {
+        if (!net.neoforged.neoforge.network.registration.NetworkRegistry.hasChannel(player.connection,
+                BalanceSyncPayload.TYPE.id()))
+            return;
+
         LedgerService ledger = ServerEvents.getLedgerService();
         if (ledger == null)
             return;
@@ -166,6 +170,10 @@ public class ModPayloads {
      * Send shop catalog data to a player (when opening a shop screen).
      */
     public static void sendCatalogSync(ServerPlayer player, String shopId) {
+        if (!net.neoforged.neoforge.network.registration.NetworkRegistry.hasChannel(player.connection,
+                CatalogSyncPayload.TYPE.id()))
+            return;
+
         ShopCatalog catalog = ServerEvents.getShopCatalog();
         if (catalog == null)
             return;
