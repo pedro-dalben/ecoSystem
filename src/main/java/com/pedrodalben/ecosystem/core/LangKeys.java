@@ -102,4 +102,13 @@ public class LangKeys {
     public static final String GUI_CURRENCY = "gui.ecosystem.currency";
     public static final String GUI_DEPOSIT_INSTRUCTION = "gui.ecosystem.deposit.instruction";
     public static final String GUI_WITHDRAW_INSTRUCTION = "gui.ecosystem.withdraw.instruction";
+
+    // Sign Shop Specific
+    public static final String ERROR_SELF_TRANSACTION = "error.ecosystem.sign.self_transaction";
+    public static final String ERROR_ITEM_NOT_FOUND = "error.ecosystem.sign.item_not_found";
+    public static final String ERROR_INVENTORY_FULL = "error.ecosystem.sign.inventory_full";
+    public static final String ERROR_PLAYER_NOT_FOUND = "error.ecosystem.sign.player_not_found";
+    public static final String ERROR_SHOP_OWNER_NO_FUNDS = "error.ecosystem.sign.owner_no_funds";
+    public static final String TRANSACTION_SUCCESS_BUY = "transaction.ecosystem.buy.success";
+    public static final String TRANSACTION_SUCCESS_SELL = "transaction.ecosystem.sell.success";
 }

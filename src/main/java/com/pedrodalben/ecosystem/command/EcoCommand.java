@@ -14,7 +14,7 @@ import com.pedrodalben.ecosystem.currency.CurrencyType;
 import com.pedrodalben.ecosystem.ledger.LedgerService;
 import com.pedrodalben.ecosystem.ledger.Transaction;
 import com.pedrodalben.ecosystem.ledger.TransactionResult;
-import com.pedrodalben.ecosystem.shop.chest.ShopTerminalBlockEntity;
+
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
@@ -45,104 +45,149 @@ public class EcoCommand {
     public static void register(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
-        dispatcher.register(Commands.literal("eco")
-                // /eco balance [currency] [player]
-                .then(Commands.literal("balance")
-                        .executes(ctx -> balanceAll(ctx))
-                        .then(Commands.argument("currency", StringArgumentType.word())
-                                .suggests(CURRENCY_SUGGESTIONS)
-                                .executes(ctx -> balanceCurrency(ctx))
-                                .then(Commands.argument("player", EntityArgument.player())
-                                        .requires(src -> src.hasPermission(2))
-                                        .executes(ctx -> balanceOther(ctx)))))
+        var eco = Commands.literal("eco");
 
-                // /eco pay <player> <currency> <amount>
-                .then(Commands.literal("pay")
-                        .then(Commands.argument("player", EntityArgument.player())
+        // Wallet
+        var wallet = Commands.literal("wallet")
+                .executes(ctx -> balanceAll(ctx))
+                .then(Commands.argument("currency", StringArgumentType.word())
+                        .suggests(CURRENCY_SUGGESTIONS)
+                        .executes(ctx -> balanceCurrency(ctx)));
+        eco.then(wallet);
+
+        // Shop
+        var shop = Commands.literal("shop")
+                .executes(ctx -> shopMain(ctx))
+                .then(Commands.literal("open")
+                        .then(Commands.argument("shopId", StringArgumentType.word())
+                                .suggests((ctx, builder) -> SharedSuggestionProvider.suggest(
+                                        ServerEvents.getShopCatalog() != null
+                                                ? ServerEvents.getShopCatalog().getShopIds()
+                                                : java.util.Collections.emptyList(),
+                                        builder))
+                                .executes(ctx -> shopOpen(ctx, 0))
+                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                        .executes(ctx -> shopOpen(ctx, IntegerArgumentType.getInteger(ctx, "page"))))))
+                .then(Commands.literal("buy")
+                        .then(Commands.argument("shopId", StringArgumentType.word())
+                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                        .then(Commands.argument("slot", IntegerArgumentType.integer(0))
+                                                .then(Commands.argument("amount", IntegerArgumentType.integer(1))
+                                                        .executes(ctx -> shopTransaction(ctx, "buy")))))))
+                .then(Commands.literal("sell")
+                        .then(Commands.argument("shopId", StringArgumentType.word())
+                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                        .then(Commands.argument("slot", IntegerArgumentType.integer(0))
+                                                .then(Commands.argument("amount", IntegerArgumentType.integer(1))
+                                                        .executes(ctx -> shopTransaction(ctx, "sell")))))));
+        eco.then(shop);
+
+        // Pay
+        var pay = Commands.literal("pay")
+                .then(Commands.argument("player", EntityArgument.player())
+                        .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
                                 .then(Commands.argument("currency", StringArgumentType.word())
                                         .suggests(CURRENCY_SUGGESTIONS)
-                                        .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                                                .executes(ctx -> pay(ctx))))))
+                                        .executes(ctx -> pay(ctx)))));
+        eco.then(pay);
 
-                // /eco deposit <currency> [amount]
-                .then(Commands.literal("deposit")
+        // Deposit
+        var deposit = Commands.literal("deposit")
+                .then(Commands.literal("all")
                         .then(Commands.argument("currency", StringArgumentType.word())
                                 .suggests(CURRENCY_SUGGESTIONS)
-                                .executes(ctx -> deposit(ctx, -1))
-                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                                        .executes(ctx -> deposit(ctx, 0)))))
-
-                // /eco withdraw <currency> <amount>
-                .then(Commands.literal("withdraw")
+                                .executes(ctx -> deposit(ctx, -1))))
+                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
                         .then(Commands.argument("currency", StringArgumentType.word())
                                 .suggests(CURRENCY_SUGGESTIONS)
-                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                                        .executes(ctx -> withdraw(ctx)))))
+                                .executes(ctx -> deposit(ctx, 0))));
+        eco.then(deposit);
 
-                // /eco admin ...
-                .then(Commands.literal("admin")
-                        .requires(src -> src.hasPermission(2))
+        // Withdraw
+        var withdraw = Commands.literal("withdraw")
+                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
+                        .then(Commands.argument("currency", StringArgumentType.word())
+                                .suggests(CURRENCY_SUGGESTIONS)
+                                .executes(ctx -> withdraw(ctx))));
+        eco.then(withdraw);
 
-                        // /eco admin give <player> <currency> <amount>
-                        .then(Commands.literal("give")
-                                .then(Commands.argument("player", EntityArgument.player())
+        // Admin
+        var admin = Commands.literal("admin")
+                .requires(s -> s.hasPermission(2))
+                .then(Commands.literal("give")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
                                         .then(Commands.argument("currency", StringArgumentType.word())
                                                 .suggests(CURRENCY_SUGGESTIONS)
-                                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                                                        .executes(ctx -> adminGive(ctx))))))
-
-                        // /eco admin take <player> <currency> <amount>
-                        .then(Commands.literal("take")
-                                .then(Commands.argument("player", EntityArgument.player())
+                                                .executes(ctx -> adminGive(ctx))))))
+                .then(Commands.literal("take")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
                                         .then(Commands.argument("currency", StringArgumentType.word())
                                                 .suggests(CURRENCY_SUGGESTIONS)
-                                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
-                                                        .executes(ctx -> adminTake(ctx))))))
-
-                        // /eco admin set <player> <currency> <amount>
-                        .then(Commands.literal("set")
-                                .then(Commands.argument("player", EntityArgument.player())
+                                                .executes(ctx -> adminTake(ctx))))))
+                .then(Commands.literal("set")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
                                         .then(Commands.argument("currency", StringArgumentType.word())
                                                 .suggests(CURRENCY_SUGGESTIONS)
-                                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0))
-                                                        .executes(ctx -> adminSet(ctx))))))
+                                                .executes(ctx -> adminSet(ctx))))))
+                .then(Commands.literal("reload")
+                        .executes(ctx -> adminReload(ctx)))
+                .then(Commands.literal("currency")
+                        .then(Commands.literal("list")
+                                .executes(ctx -> currencyList(ctx)))
+                        .then(Commands.literal("create")
+                                .then(Commands.argument("id", StringArgumentType.word())
+                                        .then(Commands.argument("displayName", StringArgumentType.string())
+                                                .executes(ctx -> currencyCreate(ctx))))));
+        eco.then(admin);
 
-                        // /eco admin reload
-                        .then(Commands.literal("reload")
-                                .executes(ctx -> adminReload(ctx)))
+        // Audit
+        var audit = Commands.literal("audit")
+                .requires(s -> s.hasPermission(2))
+                .then(Commands.literal("last")
+                        .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                .executes(ctx -> auditLast(ctx))
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .executes(ctx -> auditLastPlayer(ctx))
+                                        .then(Commands.argument("currency", StringArgumentType.word())
+                                                .suggests(CURRENCY_SUGGESTIONS)
+                                                .executes(ctx -> auditLastPlayerCurrency(ctx))))));
+        eco.then(audit);
 
-                        // /eco admin currency list
-                        .then(Commands.literal("currency")
-                                .then(Commands.literal("list")
-                                        .executes(ctx -> currencyList(ctx)))
-                                .then(Commands.literal("create")
-                                        .then(Commands.argument("id", StringArgumentType.word())
-                                                .then(Commands
-                                                        .argument("displayName", StringArgumentType.greedyString())
-                                                        .executes(ctx -> currencyCreate(ctx))))))
+        dispatcher.register(eco);
+    }
 
-                        // /eco shop ...
-                        .then(Commands.literal("shop")
-                                .then(Commands.literal("inspect")
-                                        .requires(src -> src.hasPermission(2))
-                                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
-                                                .executes(ctx -> shopInspect(ctx))))
-                                .then(Commands.literal("remove")
-                                        .requires(src -> src.hasPermission(2))
-                                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
-                                                .executes(ctx -> shopRemove(ctx)))))
+    // ==================== SHOP COMMANDS ====================
 
-                        // /eco audit last <n> [player] [currency]
-                        .then(Commands.literal("audit")
-                                .requires(src -> src.hasPermission(2))
-                                .then(Commands.literal("last")
-                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 50))
-                                                .executes(ctx -> auditLast(ctx))
-                                                .then(Commands.argument("player", EntityArgument.player())
-                                                        .executes(ctx -> auditLastPlayer(ctx))
-                                                        .then(Commands.argument("currency", StringArgumentType.word())
-                                                                .suggests(CURRENCY_SUGGESTIONS)
-                                                                .executes(ctx -> auditLastPlayerCurrency(ctx)))))))));
+    private static int shopMain(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null)
+            return 0;
+        com.pedrodalben.ecosystem.shop.chat.ChatShopHandler.openMain(player);
+        return 1;
+    }
+
+    private static int shopOpen(CommandContext<CommandSourceStack> ctx, int page) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null)
+            return 0;
+        String shopId = StringArgumentType.getString(ctx, "shopId");
+        com.pedrodalben.ecosystem.shop.chat.ChatShopHandler.openShop(player, shopId, page);
+        return 1;
+    }
+
+    private static int shopTransaction(CommandContext<CommandSourceStack> ctx, String type) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null)
+            return 0;
+        String shopId = StringArgumentType.getString(ctx, "shopId");
+        int page = IntegerArgumentType.getInteger(ctx, "page");
+        int slot = IntegerArgumentType.getInteger(ctx, "slot");
+        int amount = IntegerArgumentType.getInteger(ctx, "amount");
+        com.pedrodalben.ecosystem.shop.chat.ChatShopHandler.handleTransaction(player, type, shopId, page, slot, amount);
+        return 1;
     }
 
     // ==================== BALANCE COMMANDS ====================
@@ -466,67 +511,6 @@ public class EcoCommand {
                     from, to, tx.amount(), tx.taxAmount())).append("\n");
         }
         ctx.getSource().sendSuccess(() -> msg, false);
-    }
-
-    // ==================== SHOP ADMIN COMMANDS ====================
-
-    private static int shopInspect(CommandContext<CommandSourceStack> ctx) {
-        BlockPos pos = BlockPosArgument.getBlockPos(ctx, "pos");
-        BlockEntity be = ctx.getSource().getLevel().getBlockEntity(pos);
-
-        if (!(be instanceof ShopTerminalBlockEntity terminal)) {
-            ctx.getSource().sendFailure(Component.translatable(LangKeys.INSPECT_NO_SHOP));
-            return 0;
-        }
-
-        MutableComponent msg = Component.translatable(LangKeys.INSPECT_HEADER).append("\n");
-        msg.append(Component.translatable(LangKeys.INSPECT_OWNER, terminal.getOwnerName())).append("\n");
-        msg.append(Component.translatable(LangKeys.INSPECT_TYPE,
-                terminal.isAdminShop() ? "Admin" : "Player")).append("\n");
-        msg.append(Component.translatable(LangKeys.INSPECT_CURRENCY, terminal.getCurrencyId())).append("\n");
-
-        if (terminal.getLinkedChestPos() != null) {
-            msg.append(Component.translatable(LangKeys.INSPECT_CHEST,
-                    terminal.getLinkedChestPos().toShortString())).append("\n");
-        }
-
-        for (int i = 0; i < terminal.getListings().size(); i++) {
-            ShopTerminalBlockEntity.ShopListing l = terminal.getListings().get(i);
-            String buy = l.canBuy() ? String.valueOf(l.buyPrice()) : "—";
-            String sell = l.canSell() ? String.valueOf(l.sellPrice()) : "—";
-            msg.append(Component.translatable(LangKeys.INSPECT_LISTING,
-                    String.valueOf(i), l.displayName(), buy, sell)).append("\n");
-
-            if (!terminal.isAdminShop()) {
-                int stock = terminal.countStock(l.itemId());
-                msg.append(Component.translatable(LangKeys.INSPECT_STOCK, String.valueOf(stock))).append("\n");
-            }
-        }
-
-        ctx.getSource().sendSuccess(() -> msg, false);
-        return 1;
-    }
-
-    private static int shopRemove(CommandContext<CommandSourceStack> ctx) {
-        BlockPos pos = BlockPosArgument.getBlockPos(ctx, "pos");
-        BlockEntity be = ctx.getSource().getLevel().getBlockEntity(pos);
-
-        if (!(be instanceof ShopTerminalBlockEntity terminal)) {
-            ctx.getSource().sendFailure(Component.translatable(LangKeys.INSPECT_NO_SHOP));
-            return 0;
-        }
-
-        // Clear all shop data
-        terminal.clearListings();
-        terminal.setOwnerName("");
-        terminal.setOwnerUuid(null);
-        terminal.setAdminShop(false);
-        terminal.setLinkedChestPos(null);
-        terminal.setChanged();
-
-        ctx.getSource().sendSuccess(
-                () -> Component.translatable(LangKeys.SHOP_REMOVED, pos.toShortString()), true);
-        return 1;
     }
 
     // ==================== HELPERS ====================

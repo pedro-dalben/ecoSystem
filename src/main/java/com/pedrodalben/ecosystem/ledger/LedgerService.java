@@ -238,7 +238,19 @@ public class LedgerService {
 
     // ==================== PAY (PLAYER → PLAYER) ====================
 
+    // ==================== BALANCE CHECKS ====================
+
+    public boolean hasBalance(UUID playerUuid, Currency currency, long amount) {
+        return getBalance(playerUuid, currency.getId()) >= amount;
+    }
+
+    // ==================== PAY (PLAYER → PLAYER) ====================
+
     public TransactionResult pay(UUID fromUuid, UUID toUuid, Currency currency, long amount) {
+        return transfer(fromUuid, toUuid, currency, amount, "pay");
+    }
+
+    public TransactionResult transfer(UUID fromUuid, UUID toUuid, Currency currency, long amount, String context) {
         if (amount <= 0) {
             return TransactionResult.failure("§cAmount must be positive.");
         }
@@ -276,7 +288,7 @@ public class LedgerService {
             // Log
             Transaction tx = Transaction.create(TransactionType.PAY, currency.getId(),
                     amount, taxResult.taxAmount(), receiverGets,
-                    fromUuid, toUuid, "pay");
+                    fromUuid, toUuid, context);
             auditLogger.log(tx);
 
             String targetName = toUuid.toString();

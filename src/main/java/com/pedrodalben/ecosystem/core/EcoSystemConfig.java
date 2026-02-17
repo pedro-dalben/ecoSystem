@@ -11,8 +11,10 @@ public class EcoSystemConfig {
         public static final ModConfigSpec.IntValue MAX_PENDING_WRITES;
 
         // Features
-        public static final ModConfigSpec.BooleanValue ENABLE_GUI_SHOP;
-        public static final ModConfigSpec.BooleanValue ENABLE_CHEST_SHOP;
+        public static final ModConfigSpec.BooleanValue ENABLE_CHAT_SHOP;
+        public static final ModConfigSpec.BooleanValue ENABLE_SIGN_SHOP;
+        public static final ModConfigSpec.BooleanValue ENABLE_PLAYER_SHOPS;
+        public static final ModConfigSpec.BooleanValue ENABLE_ADMIN_SHOPS;
         public static final ModConfigSpec.ConfigValue<String> ADMIN_SHOP_NAME;
 
         // Permissions (op-levels 0-4)
@@ -50,12 +52,18 @@ public class EcoSystemConfig {
                 BUILDER.pop();
 
                 BUILDER.push("features");
-                ENABLE_GUI_SHOP = BUILDER
-                                .comment("Enable the GUI-based shop system")
-                                .define("enableGuiShop", true);
-                ENABLE_CHEST_SHOP = BUILDER
-                                .comment("Enable the chest-based shop system")
-                                .define("enableChestShop", true);
+                ENABLE_CHAT_SHOP = BUILDER
+                                .comment("Enable the chat-based shop system (/eco shop)")
+                                .define("chatShopEnabled", true);
+                ENABLE_SIGN_SHOP = BUILDER
+                                .comment("Enable the sign-based chest shop system")
+                                .define("signChestShopEnabled", true);
+                ENABLE_PLAYER_SHOPS = BUILDER
+                                .comment("Allow players to create their own shops (requires permission)")
+                                .define("playerShopsEnabled", true);
+                ENABLE_ADMIN_SHOPS = BUILDER
+                                .comment("Allow admin shops (unlimited stock) (requires permission)")
+                                .define("adminShopsEnabled", true);
                 ADMIN_SHOP_NAME = BUILDER
                                 .comment("The name that identifies admin shops (case-insensitive, spaces ignored)")
                                 .define("adminShopName", "Admin Shop");

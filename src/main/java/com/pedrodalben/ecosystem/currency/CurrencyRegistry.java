@@ -107,6 +107,20 @@ public class CurrencyRegistry {
     }
 
     /**
+     * Get the default currency (usually "money").
+     * If "money" doesn't exist, returns the first available currency, or null if
+     * empty.
+     */
+    public Currency getDefaultCurrency() {
+        Currency c = currencies.get("money");
+        if (c != null)
+            return c;
+        if (!currencies.isEmpty())
+            return currencies.values().iterator().next();
+        return null;
+    }
+
+    /**
      * Dynamically add a currency (admin command).
      */
     public void addCurrency(Currency currency) {
